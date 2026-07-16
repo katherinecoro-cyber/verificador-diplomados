@@ -1,68 +1,81 @@
-import streamlit as pd
+import streamlit as st
 import pandas as pd
-import requests
+import unicodedata
 
-# 1. CONFIGURACIÓN INICIAL (Pon aquí tus datos)
-# Reemplaza esto con el ID de tu Google Sheets que obtuviste en el Paso 1
+# Configuración automática con tu ID de Google Sheets
 SPREADSHEET_ID = "1eySPD9wEzs_D1vAXhOqmh3BXoRxCfK7A" 
 
-# Lista de las pestañas que revisará la IA automáticamente
+# Listado de pestañas a verificar
 PESTANAS = [
     'DIP. INACTIVOS', 'DIP. DE BAJA', 'DIPLOMADOS JULIO- AGOSTO -SEPT', 
     'DIPLOMADOS SEPTIEMBRE - OCTUBRE', 'DIPLOMADOS OCTUBRE - NOVIEMBRE', 
     'DIPLOMADOS NOVIEMBRE - DICIEMBR', 'DIPLOMADOS DICIEMBRE', 
-    'DIPLOMADOS MERCADO BOLIVIANO', 'DIPLOMADOS ENERO 2026', 
-    'DIPLOMADOS FEBRERO 2026', 'DIPLOMADOS MARZO 2026', 
-    'DIPLOMADOS ABRIL 2026', 'DIPLOMADOS MAYO 2026', 
-    'DIPLOMADOS JUNIO 2026', 'DIPLOMADOS JULIO 2026'
+    'DIPLOMADOS MERCADO BOLIVIANO', 'DIPLOMADOS DOBLE CERTIFICACIÓN', 
+    'DIPLOMADOS ENERO 2026', 'DIPLOMADOS FEBRERO 2026', 
+    'DIPLOMADOS MARZO 2026', 'DIPLOMADOS ABRIL 2026', 
+    'DIPLOMADOS MAYO 2026', 'DIPLOMADOS JUNIO 2026', 
+    'DIPLOMADOS JULIO 2026'
 ]
 
-import streamlit as st
+def limpiar_texto(texto):
+    """Elimina espacios, tildes y lo pasa a minúsculas para una comparación perfecta"""
+    if pd.isna(texto):
+        return ""
+    texto = str(texto).strip().lower()
+    # Eliminar acentos/tildes
+    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+    return texto
+
+st.set_page_config(page_title="Verificador UPI", page_icon="🔍", layout="centered")
+
 st.title("🔍 Verificador Inteligente de Diplomados")
-st.write("Conectado en tiempo real a Google Sheets.")
+st.write("Esta aplicación busca duplicados en tiempo real en todas las pestañas de tu Google Sheets.")
+st.markdown("---")
 
 nuevo_titulo = st.text_input("Escribe el nombre del nuevo diplomado a evaluar:")
 
-if st.button("Verificar Propuesta") and nuevo_titulo:
-    todos_los_nombres = []
-    mapa_pestanas = {}
+if st.button("Verificar Propuesta", type="primary") and nuevo_titulo:
+    nuevo_titulo_clean = limpiar_texto(nuevo_titulo)
+    encontrado = False
+    pestana_encontrada = ""
+    nombre_exacto = ""
+    total_diplomados_cargados = 0
     
-    # Descargar datos de Google Sheets en tiempo real
-    with st.spinner("Leyendo base de datos de Google Sheets..."):
+    with st.spinner("Buscando en todas las pestañas de Google Sheets..."):
         for pestana in PESTANAS:
+            # Formatear la URL para descargar la pestaña como CSV público
             url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={pestana.replace(' ', '%20')}"
             try:
                 df = pd.read_csv(url)
-                # Limpiar nombres de columnas
-                df.columns = df.columns.str.strip()
-                if 'NOMBRE DEL DIPLOMADO' in df.columns:
-                    for nombre in df['NOMBRE DEL DIPLOMADO'].dropna():
-                        nombre_limpio = str(nombre).strip()
-                        todos_los_nombres.append(nombre_limpio)
-                        mapa_pestanas[nombre_limpio.lower()] = pestana
-            except:
+                # Limpiar los nombres de las columnas (quitar espacios y pasarlo a mayúsculas para buscar)
+                df.columns = df.columns.astype(str).str.strip().str.upper()
+                
+                # Identificar la columna de nombres de diplomados
+                columna_buscar = ""
+                for col in df.columns:
+                    if "NOMBRE DEL DIPLOMADO" in col or "NOMBRE DEL PROGRAMA" in col:
+                        columna_buscar = col
+                        break
+                
+                if columna_buscar:
+                    for nombre in df[columna_buscar].dropna():
+                        total_diplomados_cargados += 1
+                        if limpiar_texto(nombre) == nuevo_titulo_clean:
+                            encontrado = True
+                            pestana_encontrada = pestana
+                            nombre_exacto = str(nombre).strip()
+                            break
+            except Exception as e:
                 continue
+            if encontrado:
+                break
 
-    # Llamada a la IA para verificar similitud semántica
-    with st.spinner("IA Analizando similitudes del título..."):
-        # Usamos un mensaje estructurado para que el modelo decida la duplicidad
-        prompt = f"""
-        Actúa como un validador académico riguroso.
-        Nuevo diplomado propuesto: "{nuevo_titulo}"
-        Lista de diplomados existentes: {todos_los_nombres[:150]}...
-        
-        Determina si el nuevo diplomado ya existe o si hay uno con un significado semántico muy similar (aunque use palabras sinónimas).
-        Responde en una sola línea siguiendo estrictamente este formato:
-        Si existe similitud: RECHAZADO | [Nombre del existente]
-        Si es original: APROBADO
-        """
-        
-        # Simulación de respuesta IA (Integrable con tu API Key corporativa)
-        coincidencia_exacta = nuevo_titulo.lower() in [n.lower() for n in todos_los_nombres]
-        
-        if coincidencia_exacta:
-            pestana_origen = mapa_pestanas[nuevo_titulo.lower()]
-            st.error(f"❌ RECHAZADO: Este nombre ya existe exactamente en la pestaña: **{pestana_origen}**")
-        else:
-            # Aquí procesa la IA la lógica semántica
-            st.success("✅ APROBADO: El título es original y no interfiere con la oferta actual.")
+    # Imprimir diagnóstico en la pantalla para saber si leyó los datos
+    st.caption(f"📊 Diagnóstico: Se revisaron {total_diplomados_cargados} registros en total a lo largo de las pestañas.")
+
+    # Mostrar resultados en pantalla
+    if encontrado:
+        st.error(f"❌ **RECHAZADO**: Este diplomado ya existe en el sistema.")
+        st.info(f"**Nombre registrado**: {nombre_exacto}\n\n**Ubicación**: Pestaña *'{pestana_encontrada}'*")
+    else:
+        st.success("✅ **APROBADO**: El título es original y no se encuentra registrado en ninguna pestaña actual.")
