@@ -4,7 +4,7 @@ import google.generativeai as genai
 import json
 
 # Configuración automática con tu ID de Google Sheets
-SPREADSHEET_ID = "1T14RPJ97kAll4_hcCUWIePB11N6AR7s5bwAJ-tltlTg" 
+SPREADSHEET_ID = "1eySPD9wEzs_D1vAXhOqmh3BXoRxCfK7A" 
 
 # Todas tus pestañas registradas
 PESTANAS = [
